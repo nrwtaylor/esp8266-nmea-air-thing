@@ -10,7 +10,7 @@
              No display
     D5, D6   No rotary selector
     D7       No button
-
+esp8266-nmea-power-thing.git
   Created 25 January 2022
   By Nicholas Taylor
 
