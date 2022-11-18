@@ -2,16 +2,18 @@
 /*
   NMEA Air Thing
 
-  Provides a temperature, humidity, pressure and air quality monitor
-        with NMEA formatted XDR sentence broadcast.
+  Provides a temperature, humidity, pressure (and with a BME690) air quality monitor
+        with NMEA formatted XDR sentence broadcasting on UDP 10110
+        by WiFi to a local network WiFi configurable local SSID.
 
   The circuit:
-    I2C bus: BME690
+    I2C bus: BME690 (or SHT3X-DIS)tbd
              No display
     D5, D6   No rotary selector
     D7       No button
-esp8266-nmea-power-thing.git
+
   Created 25 January 2022
+  Updated 17 November 2022
   By Nicholas Taylor
 
   http://url/of/online/tutorial.cc
@@ -19,21 +21,37 @@ esp8266-nmea-power-thing.git
 
 */
 
+/*
+ * 
+ * So the idea is that you won't have to install many additional libraries.
+ * But the reality is there are some very complicated libraries out there.
+ * 
+ * So, all my code is in this file.
+ * 
+ */
+
+/*
+ * These three do really cool things with numbers which I want to explore.
+ */
 #include <konfig.h>
 #include <matrix.h>
 #include <ukf.h>
 
-#include <FS.h> //this needs to be first, or it all crashes and burn
-
+#include <FS.h> // (this needs to be first, or it all crashes and burn)
 
 #include <LiquidCrystal_I2C.h> // Library for LCD
 #include <BigFont02_I2C.h>
+
+/*
+ * My preferred 16bit ADS because eventually we will want this.
+ */
 #include <Adafruit_ADS1X15.h>
 
 Adafruit_ADS1115 adsCurrent;  /* Use this for the 16-bit version */
 Adafruit_ADS1115 adsVoltage;
 
-
+#include "SHTSensor.h"
+SHTSensor sht;
 
 #include <ESP_EEPROM.h>
 
@@ -91,7 +109,7 @@ WiFiServer server(80);
 String header;
 
 
-IPAddress ipBroadCast(192, 168, 100, 255);
+IPAddress ipBroadCast(192, 168, 10, 255);
 
 boolean displayFlag = false;
 
@@ -252,6 +270,8 @@ float broadcastXDRFrequency[4];
 
 int startTimeSensorRead = micros();
 float sensorReadFrequency = 1.0 / 20; // Read sensor every 20s.
+float sensorSHTReadFrequency = 10.0; // 10Hz
+
 
 boolean sensorReadFlag = true;
 
@@ -260,6 +280,8 @@ int elapsedTimeSensorRead = 0;
 //     if (elapsedTimeSensorRead > 1 / sensorReadFrequency[i] * 1e6) {
 
 unsigned long endTime = 0;
+unsigned long endSHTTime = 0;
+
 
 OneButton button(D7, true, true);
 
@@ -365,7 +387,14 @@ char nuuid[NUUIDLENGTH + 1];
 //const char uuid[] = "0a65a21e-8c81-4581-8dcc-3818f3c2d53a";
 //const char nuuid[] = "0a65";
 
-char *nameThingWiFiAP = "Thing 0a65";
+char *nameThingWiFiAP = "Thing XXXX";
+  //uuidStr = ESP8266TrueRandom.uuidToString(uuidNumber);
+//  const char n[] = 0a65a21e-8c81-4581-8dcc-3818f3c2d53a
+//  nuuidStr = uuidStr.substring(0, 4);
+
+//  strcpy(nameThingWiFiAP, "Thing ");
+//  strcat(nameThingWiFiAP, nuuidStr.c_str());
+
 
 double microsStartTime = 0;
 
@@ -474,6 +503,15 @@ void resetUuid() {
   saveUuid();
 }
 
+void tempThingId() {
+  ESP8266TrueRandom.uuid(uuidNumber);
+  uuidStr = ESP8266TrueRandom.uuidToString(uuidNumber);
+  nuuidStr = uuidStr.substring(0, 4);
+
+  strcpy(nameThingWiFiAP, "Thing ");
+  strcat(nameThingWiFiAP, nuuidStr.c_str());
+
+}
 
 // https://forum.arduino.cc/t/lcd-bargraph-help-solved/350762
 // https://forum.arduino.cc/u/robtillaart
@@ -794,7 +832,7 @@ void displayAbout() {
   lcd.print("stackr.ca");
 
   lcd.setCursor(0, 2);         // move cursor to   (2, 1)
-  lcd.print("16 January 2022");
+  lcd.print("17 November 2022");
 
   lcd.setCursor(0, 3);         // move cursor to   (2, 1)
   lcd.print(nuuidStr);
@@ -1602,11 +1640,8 @@ bool isUuid(String uuid) {
 
   char *uuidChar = "";
 
-  //uuidStr = data;
-  //nuuidStr = uuidStr.substring(0, 4);
   strcpy(uuidChar, uuid.c_str());
 
-  Serial.println("Test uuid");
   bool uuidFlag = true;
 
   for (int i = 0;  i < 29; i ++) {
@@ -1633,8 +1668,6 @@ bool isUuid(String uuid) {
     }
   }
 
-  //Serial.println("Uuid test complete");
-  //Serial.print("uuidFlag" + uuidFlag);
   return uuidFlag;
 
 }
@@ -1657,10 +1690,14 @@ void setup()
   loadUuid();
 
   bool isuuid = isUuid(uuidStr);
+    if (!isuuid) {
+Serial.println("No UUID found on Thing.");      
+     // resetUuid();
+      tempThingId();
+    } else {
+Serial.println(uuidStr);
+    }
 
-  //  if (!isuuid) {
-  //    resetUuid();
-  //  }
 
 
   displayAbout();
@@ -1668,17 +1705,16 @@ void setup()
   if (displayFlag) {
     delay(4000);
   }
-  Serial.println("Hello");
+  Serial.println("Loading settings from Thing.");
   defaultSettings();
   loadSettings();
 
   lcd.clear();
 
-  Serial.println("Hello");
-
   Wire.begin();
   // TWBR = 12;  // 400 kbit/sec I2C speed
 
+  Serial.println("Wire interface started.");
 
 
   // Set up the interrupt pin, its set as active high, push-pull
@@ -1701,7 +1737,7 @@ void setup()
   lcd.print("ADS   Connecting ");
 
   if (!adsCurrent.begin(0x48)) {
-    Serial.println("Failed to initialize ADS Current.");
+    Serial.println("Could not connect to ADS current device.");
     //while (1);
     adsFlag = false;
   }
@@ -1719,12 +1755,22 @@ void setup()
   }
 
 
-  Serial.println(F("BME680 async test"));
+//  Serial.println(F("BME680 async test"));
 
   if (!bme.begin()) {
-    Serial.println(F("Could not find a valid BME680 sensor, check wiring!"));
-    while (1);
+    Serial.println(F("Could not find a BME680 sensor, check wiring! Proceeding without it."));
+    ///while (1);
   }
+
+// Start SHT3X here
+
+  if (sht.init()) {
+      Serial.print("SHT3X  success\n");
+  } else {
+      Serial.print("SHT3X could not initialise.\n");
+  }
+  //sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
+  sht.setAccuracy(SHTSensor::SHT_ACCURACY_HIGH); // only supported by SHT3x
 
   // Set up oversampling and filter initialization
   bme.setTemperatureOversampling(BME680_OS_8X);
@@ -1738,6 +1784,23 @@ void setup()
   //lcd.clear();
   lcd.setCursor(0, 1);         // move cursor to   (2,
   lcd.print("WIFI  Connecting ");
+
+  nuuidStr = uuidStr.substring(0, 4);
+
+Serial.print("Got thing's existing access point name");
+Serial.print(nameThingWiFiAP);
+Serial.println();
+
+  strcpy(nameThingWiFiAP, "Thing ");
+  strcat(nameThingWiFiAP, nuuidStr.c_str());
+
+Serial.print("Updated thing's access point name");
+Serial.print(nameThingWiFiAP);
+Serial.println();
+
+
+
+
 
   // WiFiManager
   //wifiManager.resetSettings();
@@ -1754,18 +1817,48 @@ void setup()
   wifiManager.setConfigPortalBlocking(false);
   //res = wifiManager.startConfigPortal(nameThingWiFiAP);
   //res = wifiManager.autoConnect(nameThingWiFiAP, "password");
+
+Serial.print("nameThingWiFiAP ");
+Serial.print(nameThingWiFiAP);
+Serial.println("");
+  
   res = wifiManager.autoConnect(nameThingWiFiAP);
   if (!res) {
     lcd.setCursor(0, 1);         // move cursor to   (2,
     lcd.print("WIFI  Did not connect");
     Serial.println("Configportal running");
-    // Start up AP as available.
 
+    if (wifiManager.getWiFiSSID() == "") {
+
+      Serial.println("Blank SSID seen");
+//      wifiManager.setConfigPortalBlocking(true);
+    }
+
+    // Start up AP as available.
+//  wifiManager.setConfigPortalBlocking(true);
+
+  // set configportal timeout
+//  wifiManager.setConfigPortalTimeout(timeout);
+/*
+  if (!wifiManager.startConfigPortal(nameThingWiFiAP)) {
+    Serial.println("failed to connect and hit timeout");
+    delay(3000);
+    //reset and try again, or maybe put it to deep sleep
+//    ESP.restart();
+    delay(5000);
+    Serial.println("foo");
+  }
+    Serial.println("bar");
+*/
 
   } else {
     lcd.setCursor(0, 1);         // move cursor to   (2,
     lcd.print("WIFI  SSID SET   ");
-    Serial.println("WIFI SSID got.");
+    
+    Serial.print("Connected to WiFi AP ");
+    Serial.print(wifiManager.getWiFiSSID());
+    Serial.println();
+
     sendPMTK("WIFI SSID got"); 
     // Connected to an SSID.
   }
@@ -1841,10 +1934,32 @@ void loop()
 
       sendXDR("TH", "P", "PRSA", bme.pressure / 100.0, "B", "T", "TMPA", bme.temperature, "C", "H", "HMDA", bme.humidity, "P", "X", "GASA", bme.gas_resistance / 1000.0, "X" );
       sensorReadFlag = false;
-
+  wifiManager.setConfigPortalBlocking(false);
     }
   }
 
+  if (millis() > (endSHTTime +  1 / sensorSHTReadFrequency * 1e3))  {
+
+
+
+
+
+if (sht.readSample()) {
+  /*
+      Serial.print("SHT:\n");
+      Serial.print("  RH: ");
+      Serial.print(sht.getHumidity(), 2);
+      Serial.print("\n");
+      Serial.print("  T:  ");
+      Serial.print(sht.getTemperature(), 2);
+      Serial.print("\n");
+    */  
+  } else {
+      Serial.print("SHTX error in readSample()\n");
+  }
+      sendXDR("TH", "P", "PRSB", -1, "B", "T", "TMPB", sht.getTemperature(), "C", "H", "HMDB", sht.getHumidity(), "P", "X", "GASB", -1, "X" );
+      endSHTTime = millis();
+  }   
 
   //  Serial.println("loop");
   wifiManager.process();
@@ -2501,12 +2616,13 @@ void loop()
     endTime = bme.beginReading();
     startTimeSensorRead = micros();
 sensorReadFlag = true;
- //   Serial.print(F("Reading started at "));
- //   Serial.print(millis());
- //   Serial.print(F(" and will finish at "));
- //   Serial.println(endTime);
-
   }
+
+
+
+
+
+
 
 
   //  int elapsedTimeNMEA = micros() - startTimeNMEA;
