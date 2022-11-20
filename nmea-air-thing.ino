@@ -22,17 +22,17 @@
 */
 
 /*
- * 
- * So the idea is that you won't have to install many additional libraries.
- * But the reality is there are some very complicated libraries out there.
- * 
- * So, all my code is in this file.
- * 
- */
+
+   So the idea is that you won't have to install many additional libraries.
+   But the reality is there are some very complicated libraries out there.
+
+   So, all my code is in this file.
+
+*/
 
 /*
- * These three do really cool things with numbers which I want to explore.
- */
+   These three do really cool things with numbers which I want to explore.
+*/
 #include <konfig.h>
 #include <matrix.h>
 #include <ukf.h>
@@ -43,8 +43,8 @@
 #include <BigFont02_I2C.h>
 
 /*
- * My preferred 16bit ADS because eventually we will want this.
- */
+   My preferred 16bit ADS because eventually we will want this.
+*/
 #include <Adafruit_ADS1X15.h>
 
 Adafruit_ADS1115 adsCurrent;  /* Use this for the 16-bit version */
@@ -52,6 +52,18 @@ Adafruit_ADS1115 adsVoltage;
 
 #include "SHTSensor.h"
 SHTSensor sht;
+
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 2
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature.
+DallasTemperature sensors(&oneWire);
 
 #include <ESP_EEPROM.h>
 
@@ -185,7 +197,13 @@ int encoderChangeAmount = 0;
 // ads.setGain(GAIN_EIGHT);      // 8x gain   +/- 0.512V  1 bit = 0.25mV   0.015625mV
 // ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
 
+bool shtFlag = true;
+
+bool oneWireFlag = true;
+
 bool adsFlag = true;
+
+
 int adcNumBits = 32767;
 
 int voltageMillis[4];
@@ -271,7 +289,7 @@ float broadcastXDRFrequency[4];
 int startTimeSensorRead = micros();
 float sensorReadFrequency = 1.0 / 20; // Read sensor every 20s.
 float sensorSHTReadFrequency = 10.0; // 10Hz
-
+float sensorOneWireReadFrequency = 10.0; //10 Hz
 
 boolean sensorReadFlag = true;
 
@@ -281,7 +299,7 @@ int elapsedTimeSensorRead = 0;
 
 unsigned long endTime = 0;
 unsigned long endSHTTime = 0;
-
+unsigned long endOneWireTime = 0;
 
 OneButton button(D7, true, true);
 
@@ -388,7 +406,7 @@ char nuuid[NUUIDLENGTH + 1];
 //const char nuuid[] = "0a65";
 
 char *nameThingWiFiAP = "Thing XXXX";
-  //uuidStr = ESP8266TrueRandom.uuidToString(uuidNumber);
+//uuidStr = ESP8266TrueRandom.uuidToString(uuidNumber);
 //  const char n[] = 0a65a21e-8c81-4581-8dcc-3818f3c2d53a
 //  nuuidStr = uuidStr.substring(0, 4);
 
@@ -912,8 +930,8 @@ void webConfigPortal() {
 
 void sendUDP(char *inData)
 {
-//  Serial.println("sendUDP");
-//  Serial.println(inData);
+  //  Serial.println("sendUDP");
+  //  Serial.println(inData);
   if (broadcastNMEAFlag == false) {
     Serial.println("broadcastNMEAFLag is false");
     return;
@@ -1026,24 +1044,24 @@ void defaultSettings() {
 }
 
 void sendPMTK(char * data) {
-/*
- * Packet Length:
-The maximum length of each packet is restricted to 255 bytes.
-Packet Contents:
-Preamble: 1 byte character. ‘$’
-Talker ID: 4 bytes character string. “PMTK”
-Packet Type: 3 bytes character string. From “000” to “999”
-Data Field: The Data Field has variable length depending on the packet type.
-A comma symbol ‘,’ must be inserted ahead each data field to help the decoder process the
-Data Field.
-*: 1 byte character. ‘*’
-The start symbol is used to mark the end of Data Field.
-CHK1, CHK2: 2 bytes character string. CHK1 and CHK2 are the checksum of data between Preamble and ‘*’.
-CR, LF: 2 bytes binary data. (0x0D, 0x0A)
-The 2 bytes are used to identify the end of a packet
- * 
- */
- char nmeaData[255];
+  /*
+     Packet Length:
+    The maximum length of each packet is restricted to 255 bytes.
+    Packet Contents:
+    Preamble: 1 byte character. ‘$’
+    Talker ID: 4 bytes character string. “PMTK”
+    Packet Type: 3 bytes character string. From “000” to “999”
+    Data Field: The Data Field has variable length depending on the packet type.
+    A comma symbol ‘,’ must be inserted ahead each data field to help the decoder process the
+    Data Field.
+    : 1 byte character. ‘*’
+    The start symbol is used to mark the end of Data Field.
+    CHK1, CHK2: 2 bytes character string. CHK1 and CHK2 are the checksum of data between Preamble and ‘*’.
+    CR, LF: 2 bytes binary data. (0x0D, 0x0A)
+    The 2 bytes are used to identify the end of a packet
+
+  */
+  char nmeaData[255];
   char *dollar = "$";
   char *sentenceNMEA = "PMTK";
   strcpy(nmeaData, dollar);
@@ -1054,7 +1072,7 @@ The 2 bytes are used to identify the end of a packet
   strcat(nmeaData, "000");
   strcat(nmeaData, ",");
   strcat(nmeaData, data);
-  
+
   int crc =  nmea0183_checksum(nmeaData);
   char hex[2];
   sprintf(hex, "%02X", crc);
@@ -1064,14 +1082,14 @@ The 2 bytes are used to identify the end of a packet
   strcat(nmeaData, hex);
 
   sendUDP(nmeaData);
-  
+
 }
 
-void sendXDR(char * prefixNMEA, 
-             char * sensorTypeA, char * sensorNameA, float sensorValueA, char * sensorUnitsA, 
-             char * sensorTypeB,char * sensorNameB, float sensorValueB, char * sensorUnitsB,
-             char * sensorTypeC,char * sensorNameC, float sensorValueC, char * sensorUnitsC,
-             char * sensorTypeD,char * sensorNameD, float sensorValueD, char * sensorUnitsD)
+void sendXDR(char * prefixNMEA,
+             char * sensorTypeA, char * sensorNameA, float sensorValueA, char * sensorUnitsA,
+             char * sensorTypeB, char * sensorNameB, float sensorValueB, char * sensorUnitsB,
+             char * sensorTypeC, char * sensorNameC, float sensorValueC, char * sensorUnitsC,
+             char * sensorTypeD, char * sensorNameD, float sensorValueD, char * sensorUnitsD)
 {
   char nmeaData[80];
   char *dollar = "$";
@@ -1690,13 +1708,13 @@ void setup()
   loadUuid();
 
   bool isuuid = isUuid(uuidStr);
-    if (!isuuid) {
-Serial.println("No UUID found on Thing.");      
-     // resetUuid();
-      tempThingId();
-    } else {
-Serial.println(uuidStr);
-    }
+  if (!isuuid) {
+    Serial.println("No UUID found on Thing.");
+    // resetUuid();
+    tempThingId();
+  } else {
+    Serial.println(uuidStr);
+  }
 
 
 
@@ -1755,19 +1773,20 @@ Serial.println(uuidStr);
   }
 
 
-//  Serial.println(F("BME680 async test"));
+  //  Serial.println(F("BME680 async test"));
 
   if (!bme.begin()) {
     Serial.println(F("Could not find a BME680 sensor, check wiring! Proceeding without it."));
     ///while (1);
   }
 
-// Start SHT3X here
+  // Start SHT3X here
 
   if (sht.init()) {
-      Serial.print("SHT3X  success\n");
+    Serial.print("SHT3X  success\n");
   } else {
-      Serial.print("SHT3X could not initialise.\n");
+    Serial.print("SHT3X could not initialise.\n");
+    shtFlag = false;
   }
   //sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
   sht.setAccuracy(SHTSensor::SHT_ACCURACY_HIGH); // only supported by SHT3x
@@ -1779,6 +1798,19 @@ Serial.println(uuidStr);
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150); // 320*C for 150 ms
 
+  sensors.begin();
+  /*
+    if (sensors.begin()) {
+
+      Serial.print("Dallas OneWire success\n");
+
+    } else {
+
+      Serial.print("Dallas OneWire could not initialise.\n");
+      oneWireFlag = false;
+
+    }
+  */
 
 
   //lcd.clear();
@@ -1787,16 +1819,16 @@ Serial.println(uuidStr);
 
   nuuidStr = uuidStr.substring(0, 4);
 
-Serial.print("Got thing's existing access point name");
-Serial.print(nameThingWiFiAP);
-Serial.println();
+  Serial.print("Got thing's existing access point name");
+  Serial.print(nameThingWiFiAP);
+  Serial.println();
 
   strcpy(nameThingWiFiAP, "Thing ");
   strcat(nameThingWiFiAP, nuuidStr.c_str());
 
-Serial.print("Updated thing's access point name");
-Serial.print(nameThingWiFiAP);
-Serial.println();
+  Serial.print("Updated thing's access point name");
+  Serial.print(nameThingWiFiAP);
+  Serial.println();
 
 
 
@@ -1804,7 +1836,7 @@ Serial.println();
 
   // WiFiManager
   //wifiManager.resetSettings();
-  
+
   //  WiFiManager wifiManager;
   //    wifiManager.setConfigPortalTimeout(15);
   //  wifiManager.setAPCallback(configModeCallback);
@@ -1818,10 +1850,10 @@ Serial.println();
   //res = wifiManager.startConfigPortal(nameThingWiFiAP);
   //res = wifiManager.autoConnect(nameThingWiFiAP, "password");
 
-Serial.print("nameThingWiFiAP ");
-Serial.print(nameThingWiFiAP);
-Serial.println("");
-  
+  Serial.print("nameThingWiFiAP ");
+  Serial.print(nameThingWiFiAP);
+  Serial.println("");
+
   res = wifiManager.autoConnect(nameThingWiFiAP);
   if (!res) {
     lcd.setCursor(0, 1);         // move cursor to   (2,
@@ -1831,35 +1863,35 @@ Serial.println("");
     if (wifiManager.getWiFiSSID() == "") {
 
       Serial.println("Blank SSID seen");
-//      wifiManager.setConfigPortalBlocking(true);
+      //      wifiManager.setConfigPortalBlocking(true);
     }
 
     // Start up AP as available.
-//  wifiManager.setConfigPortalBlocking(true);
+    //  wifiManager.setConfigPortalBlocking(true);
 
-  // set configportal timeout
-//  wifiManager.setConfigPortalTimeout(timeout);
-/*
-  if (!wifiManager.startConfigPortal(nameThingWiFiAP)) {
-    Serial.println("failed to connect and hit timeout");
-    delay(3000);
-    //reset and try again, or maybe put it to deep sleep
-//    ESP.restart();
-    delay(5000);
-    Serial.println("foo");
-  }
-    Serial.println("bar");
-*/
+    // set configportal timeout
+    //  wifiManager.setConfigPortalTimeout(timeout);
+    /*
+      if (!wifiManager.startConfigPortal(nameThingWiFiAP)) {
+        Serial.println("failed to connect and hit timeout");
+        delay(3000);
+        //reset and try again, or maybe put it to deep sleep
+      //    ESP.restart();
+        delay(5000);
+        Serial.println("foo");
+      }
+        Serial.println("bar");
+    */
 
   } else {
     lcd.setCursor(0, 1);         // move cursor to   (2,
     lcd.print("WIFI  SSID SET   ");
-    
+
     Serial.print("Connected to WiFi AP ");
     Serial.print(wifiManager.getWiFiSSID());
     Serial.println();
 
-    sendPMTK("WIFI SSID got"); 
+    sendPMTK("WIFI SSID got");
     // Connected to an SSID.
   }
   if (displayFlag) {
@@ -1934,40 +1966,77 @@ void loop()
 
       sendXDR("TH", "P", "PRSA", bme.pressure / 100.0, "B", "T", "TMPA", bme.temperature, "C", "H", "HMDA", bme.humidity, "P", "X", "GASA", bme.gas_resistance / 1000.0, "X" );
       sensorReadFlag = false;
-  wifiManager.setConfigPortalBlocking(false);
+      wifiManager.setConfigPortalBlocking(false);
     }
   }
 
-  if (millis() > (endSHTTime +  1 / sensorSHTReadFrequency * 1e3))  {
+  if (oneWireFlag) {
 
+    if (millis() > (endOneWireTime +  1 / sensorOneWireReadFrequency * 1e3))  {
 
+      // call sensors.requestTemperatures() to issue a global temperature
+      // request to all devices on the bus
+      Serial.print("Requesting temperatures...");
+      sensors.requestTemperatures(); // Send the command to get temperatures
+      Serial.println("DONE");
+      // After we got the temperatures, we can print them here.
+      // We use the function ByIndex, and as an example get the temperature from the first sensor only.
+      float tempC = sensors.getTempCByIndex(0);
+      float tempD = sensors.getTempCByIndex(1);
 
+      // Check if reading was successful
+      if (tempC != DEVICE_DISCONNECTED_C)
+      {
+        //Serial.print("Temperature for the device 1 (index 0) is: ");
+        //Serial.println(tempC);
+        //Serial.println(tempD);
 
+        sendXDR("TH", "T", "TMPP", tempC, "C", "T", "TMPS", tempD, "C", "X", "XXXX", -1, "X", "X", "XXXX", -1, "X" );
 
-if (sht.readSample()) {
-  /*
-      Serial.print("SHT:\n");
-      Serial.print("  RH: ");
-      Serial.print(sht.getHumidity(), 2);
-      Serial.print("\n");
-      Serial.print("  T:  ");
-      Serial.print(sht.getTemperature(), 2);
-      Serial.print("\n");
-    */  
-  } else {
-      Serial.print("SHTX error in readSample()\n");
+      }
+      else
+      {
+        Serial.println("Error: Could not read temperature data");
+      }
+
+    endOneWireTime = millis();
+
+    }
+
+    //      sendXDR("TH", "T", "TMPP", tempC, "C", "T", "TMPS", tempD, "C", "X", "XXXX", -1, "X", "X", "XXXX", -1, "X" );
+
+    //endOneWireTime = millis();
+
   }
+
+  if (shtFlag) {
+    if (millis() > (endSHTTime +  1 / sensorSHTReadFrequency * 1e3))  {
+
+
+      if (sht.readSample()) {
+        /*
+            Serial.print("SHT:\n");
+            Serial.print("  RH: ");
+            Serial.print(sht.getHumidity(), 2);
+            Serial.print("\n");
+            Serial.print("  T:  ");
+            Serial.print(sht.getTemperature(), 2);
+            Serial.print("\n");
+        */
+      } else {
+        Serial.print("SHTX error in readSample()\n");
+      }
       sendXDR("TH", "P", "PRSB", -1, "B", "T", "TMPB", sht.getTemperature(), "C", "H", "HMDB", sht.getHumidity(), "P", "X", "GASB", -1, "X" );
       endSHTTime = millis();
-  }   
-
+    }
+  }
   //  Serial.println("loop");
   wifiManager.process();
   button.tick();
 
   // Web server (http)/
   webThing();
-  
+
   if (consoleFlag) {
     //Serial.println("Loop.");
     //Serial.println(nuuidStr);
@@ -2612,10 +2681,10 @@ if (sht.readSample()) {
 
   elapsedTimeSensorRead = micros() - startTimeSensorRead;
   if (elapsedTimeSensorRead > 1 / sensorReadFrequency * 1e6) {
- //   Serial.println("Started BME reading.");
+    //   Serial.println("Started BME reading.");
     endTime = bme.beginReading();
     startTimeSensorRead = micros();
-sensorReadFlag = true;
+    sensorReadFlag = true;
   }
 
 
