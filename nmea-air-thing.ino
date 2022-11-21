@@ -289,7 +289,7 @@ float broadcastXDRFrequency[4];
 int startTimeSensorRead = micros();
 float sensorReadFrequency = 1.0 / 20; // Read sensor every 20s.
 float sensorSHTReadFrequency = 10.0; // 10Hz
-float sensorOneWireReadFrequency = 10.0; //10 Hz
+float sensorOneWireReadFrequency = 5.0; //10 Hz
 
 boolean sensorReadFlag = true;
 
@@ -1727,11 +1727,13 @@ bool isUuid(String uuid) {
 
 char mqtt_server[40];
 
-WiFiManagerParameter custom_text("<p>NMEA Air Thing</p>");
+WiFiManagerParameter custom_text("<p>This is a developmental parameter.</p>");
 
 //WiFiManagerParameter custom_value("elapsedTimeSensorRead");
 
-WiFiManagerParameter custom_mqtt_server("server", "mqtt_server", mqtt_server, 40);
+WiFiManagerParameter custom_mqtt_server("server","API web hook",mqtt_server, 40);
+
+WiFiManagerParameter custom_web_hook("http://stackr.ca/api/whitefox/message", "API web hook", mqtt_server, 40);
 
 
 
@@ -1900,13 +1902,15 @@ void setup()
   Serial.println("");
 
   //wiFiManagerParameter custom_mqtt_server("server","mqtt_server",mqtt_server, 40);
+  wifiManager.addParameter(&custom_web_hook);
+
   wifiManager.addParameter(&custom_mqtt_server);
 
   wifiManager.addParameter(&custom_text);
 
   //  wifiManager.addParameter(&custom_value);
 
-  WiFiManagerParameter custom_value("hey");
+  WiFiManagerParameter custom_value("Contact your vendor for an access token.");
   wifiManager.addParameter(&custom_value);
 
   //  std::vector<const char *> menu = {"wifi","param","info"};
@@ -2172,7 +2176,7 @@ void loop()
 
             char jsonData[255];
 
-            char *dollar = "{\"tmpa\":\"";
+            char *dollar = "{\"tmpp\":\"";
             char *sentenceNMEA = "XDR";
             strcpy(jsonData, dollar);
 
@@ -2180,7 +2184,7 @@ void loop()
             sprintf(append, "%.2f", tempC);
             strcat(jsonData, append);
 
-            strcat(jsonData, "\",\"tmpb\":\"");
+            strcat(jsonData, "\",\"tmps\":\"");
 
             sprintf(append, "%.2f", tempD);
             strcat(jsonData, append);
@@ -2235,9 +2239,11 @@ void loop()
       //          client.println(jsonData);
 
                 client.println("<br />");
+                client.print("PORT ");
                 client.print(tempC );                // Display current state, and ON/OFF buttons for GPIO 5
                      client.println("C" );
                 client.println("<br />");
+                client.print("STARBOARD ");
                 client.print(tempD );
                            client.println("C" );
                                 client.println("<br />");
