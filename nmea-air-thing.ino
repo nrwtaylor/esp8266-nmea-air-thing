@@ -88,6 +88,7 @@ DallasTemperature sensors(&oneWire);
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson
 
+
 #include <WiFiUdp.h>
 #include <Wire.h>
 #include <OneButton.h>
@@ -213,12 +214,13 @@ int encoderChangeAmount = 0;
 // ads.setGain(GAIN_EIGHT);      // 8x gain   +/- 0.512V  1 bit = 0.25mV   0.015625mV
 // ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
 
+// Manifest.
+
 bool shtFlag = true;
 bool whitefoxFlag = true;
 bool oneWireFlag = false;
-
 bool adsFlag = true;
-
+boolean udpFlag = false;
 
 int adcNumBits = 32767;
 
@@ -308,9 +310,13 @@ int startTimeSensorRead = micros();
 float sensorReadFrequency = 1.0 / 20; // Read sensor every 20s.
 float sensorSHTReadFrequency = 2.0; // 10Hz
 float sensorOneWireReadFrequency = 5.0; //10 Hz
-float whitefoxFrequency = 1.0 / 30;
 
-boolean udpFlag = true;
+
+double requested_poll_interval = 60000;
+double minimum_poll_interval = 60000;
+float whitefoxFrequency = 1.0 / (requested_poll_interval / 1000.0);
+
+
 
 boolean sensorReadFlag = true;
 
@@ -328,6 +334,7 @@ unsigned long endWhitefoxTime = 0;
 
 unsigned long startWebRequestTime = 0;
 unsigned long runTimeWebRequestTime = 0;
+
 
 OneButton button(D7, true, true);
 
@@ -451,9 +458,7 @@ char api_username[40];
 
 double microsStartTime = 0;
 
-//const char *URL = "https://stackr.ca/api/whitefox/message";
-const char *URL = "http://192.168.10.10/api/whitefox/message";
-
+const char *URL = "https://example.endpoint";
 
 WiFiUDP udp;
 WiFiClient espClient;
@@ -1002,8 +1007,10 @@ void webConfigPortal() {
 void sendUDP(char *inData)
 {
 
-if (!udpFlag) {return;}
-  
+  if (!udpFlag) {
+    return;
+  }
+
   //  Serial.println("sendUDP");
   //  Serial.println(inData);
   if (broadcastNMEAFlag == false) {
@@ -1021,7 +1028,7 @@ if (!udpFlag) {return;}
       Serial.print("sendUDP Did not send packet.\n");
     } else {
 
-Serial.println("sendUDP sent a packet");
+      Serial.println("sendUDP sent a packet");
 
     }
 
@@ -1170,12 +1177,19 @@ char * sendPost(char * sensorNameA, float sensorValueA, char * sensorNameB, floa
   char nmeaData[800];
   //char nmeaData[] = "{\"from\":\"xxxx\",\"to\":\"xxxx\",\"subject\":\"xxxx\"}";
 
-  char *dollar = "{\"from\":\"xxxx\",\"to\":\"xxxx\",\"subject\":\"xxxx\"";
+  char *dollar = "{\"from\":\"";
   //char *sentenceNMEA = "XDR";
   strcpy(nmeaData, dollar);
 
+  strcat(nmeaData, uuidStr.c_str());
+  strcat(nmeaData, "\",");
+
+  strcat(nmeaData, "\"to\":\"snapshot\",\"subject\":\"xxxx\"");
 
   strcat(nmeaData, ",\"");
+
+  strcat(nmeaData, "agentInput\":{\"");
+
   strcat(nmeaData, sensorNameA);
 
   strcat(nmeaData, "\":");
@@ -1200,6 +1214,8 @@ char * sendPost(char * sensorNameA, float sensorValueA, char * sensorNameB, floa
 
   strcat(nmeaData, "}");
 
+  strcat(nmeaData, "}");
+  Serial.println(nmeaData);
   return nmeaData;
 
   //char nmeaData[] = "{\"from\":\"xxxx\",  strcat(nmeaData, "\"");\"to\":\"xxxx\",\"subject\":\"xxxx\",\"sender\":\"558499999999\",\"content\":\"Just a message\",\"groupName\":\"Recipients_list\",";
@@ -1852,15 +1868,21 @@ WiFiManagerParameter custom_mqtt_server("server", "API web hook", mqtt_server, 4
 //WiFiManagerParameter custom_api_password("api_password", "API password", api_password, 40);
 
 // alphanumber?
-//WiFiManagerParameter custom_web_hook("http://stackr.ca/api/whitefox/message", "API web hook", mqtt_server, 40);
+//WiFiManagerParameter custom_web_hook("http://stackr.ca/api/
+//message", "API web hook", mqtt_server, 40);
 
 
 
 
 WiFiManager wifiManager;
 
+
+StaticJsonDocument<7000> doc;
+char json[] =
+  "{\"sensor\":\"gps\",\"time\":1351824120,\"data\":[48.756080,2.302038]}";
 void setup()
 {
+
 
   //setupSPIFFS();
   lcd.init(); //initialize the lcd
@@ -2014,16 +2036,16 @@ void setup()
   bool res;
 
 
-// Reset and open the portal.
-//  wifiManager.resetSettings();
+  // Reset and open the portal.
+  //  wifiManager.resetSettings();
   // !!!!
   // set configportal timeout
-//  wifiManager.setConfigPortalTimeout(180);
-  
+  //  wifiManager.setConfigPortalTimeout(180);
+
   //wifiManager.setConfigPortalTimeout(60);
   //wifiManager.setConfigPortalBlocking(false);
   //res = wifiManager.startConfigPortal(nameThingWiFiAP);
-  
+
   //res = wifiManager.autoConnect(nameThingWiFiAP, "password");
 
   Serial.print("nameThingWiFiAP ");
@@ -2037,9 +2059,9 @@ void setup()
 
   wifiManager.addParameter(&custom_text);
 
-//  wifiManager.addParameter(&custom_api_token);
-//  wifiManager.addParameter(&custom_api_password);
-//  wifiManager.addParameter(&custom_api_username);
+  //  wifiManager.addParameter(&custom_api_token);
+  //  wifiManager.addParameter(&custom_api_password);
+  //  wifiManager.addParameter(&custom_api_username);
 
   //  wifiManager.addParameter(&custom_value);
 
@@ -2192,8 +2214,8 @@ void setup()
     }
   */
 
-//      wifiManager.setConfigPortalBlocking(false);
-  
+  //      wifiManager.setConfigPortalBlocking(false);
+
   Serial.println("Switching to 38400 baud monitoring reporting.");
 
   Serial.begin(38400);
@@ -2231,7 +2253,7 @@ void loop()
 
       sendXDR("TH", "P", "PRSA", bme.pressure / 100.0, "B", "T", "TMPA", bme.temperature, "C", "H", "HMDA", bme.humidity, "P", "X", "GASA", bme.gas_resistance / 1000.0, "X" );
       sensorReadFlag = false;
-//
+      //
     }
   }
 
@@ -2306,8 +2328,8 @@ void loop()
     if (millis() > (endWhitefoxTime +  1 / whitefoxFrequency * 1e3))  {
 
 
-  Serial.print("Thing IP address: ");
-  Serial.println(WiFi.localIP());   //You can get IP address assigned to ESP
+      Serial.print("Thing IP address: ");
+      Serial.println(WiFi.localIP());   //You can get IP address assigned to ESP
 
 
       if (true) {
@@ -2338,8 +2360,8 @@ void loop()
       httpClient.begin(espClient, URL);
       //    httpClient.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-// username and password live on the thing.
-// token request and fulfilment is from an API (off thing).
+      // username and password live on the thing.
+      // token request and fulfilment is from an API (off thing).
 
       httpClient.addHeader("Content-Type", "application/json");
       if (api_token != "") {
@@ -2357,23 +2379,37 @@ void loop()
       Serial.print("web request:");
       //    Serial.println(content);
       Serial.println(httpCode);
-      Serial.println("");
+      //Serial.println(content); // response body
+
+      // Deserialize the JSON document
+      DeserializationError error = deserializeJson(doc, content);
+
+      // Test if parsing succeeds.
+      if (error) {
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        return;
+      }
+
+      // Fetch values.
+      //
+      // Most of the time, you can rely on the implicit casts.
+      // In other case, you can do doc["time"].as<long>();
+      const char* utemp = doc["uuid"];
+      requested_poll_interval = doc["thingReport"]["requested_poll_interval"];
+      Serial.print("requested_poll_interval");
+      Serial.println(requested_poll_interval);
+
+// Do not allow for less than minimum_poll_interval updates
+if (requested_poll_interval >= minimum_poll_interval) {
+      // Update frequency.
+      whitefoxFrequency = 1.0 / (requested_poll_interval / 1000.0);
+} else {
 
 
+Serial.println("Requested poll interval less than minimum.");
 
-
-
-
-
-
-
-      //http.begin(WiFiClient, host);     //Specify request destination
-
-      //  int httpCode = http.GET();            //Send the request
-      //  String payload = http.getString();    //Get the response payload from server
-
-      //  Serial.print("Response Code:"); //200 is OK
-      //  Serial.println(httpCode);   //Print HTTP return code
+}
       /*
         Serial.print("Returned data from Server:");
         Serial.println(payload);    //Print request response payload
@@ -2560,30 +2596,30 @@ void loop()
 
 
                 //          client.println(jsonData);
-if (oneWireFlag) {
-                client.println("<br />");
-                client.print("TEMPERATURE ");
-                client.print(tempC );                // Display current state, and ON/OFF buttons for GPIO 5
-                client.println("C" );
-                client.println("<br />");
-                client.print("TEMPERATURE ");
-                client.print(tempD );
-                client.println("C" );
-                client.println("<br />");                client.println("<br />");
-}
+                if (oneWireFlag) {
+                  client.println("<br />");
+                  client.print("TEMPERATURE ");
+                  client.print(tempC );                // Display current state, and ON/OFF buttons for GPIO 5
+                  client.println("C" );
+                  client.println("<br />");
+                  client.print("TEMPERATURE ");
+                  client.print(tempD );
+                  client.println("C" );
+                  client.println("<br />");                client.println("<br />");
+                }
 
-if (shtFlag) {
-                client.print("HUMIDITY ");
-                client.print(humiditySHT );
-                client.println("%" );
-                client.println("<br />");
-                client.print("TEMPERATURE ");                
-                client.print(temperatureSHT );
-                client.println("°C" );
-                client.println("<br />");
-                client.println("<br />");
+                if (shtFlag) {
+                  client.print("HUMIDITY ");
+                  client.print(humiditySHT );
+                  client.println("%" );
+                  client.println("<br />");
+                  client.print("TEMPERATURE ");
+                  client.print(temperatureSHT );
+                  client.println("°C" );
+                  client.println("<br />");
+                  client.println("<br />");
 
-}
+                }
 
                 if (WiFi.status() == WL_CONNECTED) {
                   client.println("WiFi connected.");
@@ -3381,15 +3417,15 @@ if (shtFlag) {
 
 
 
-//https://randomnerdtutorials.com/wifimanager-with-esp8266-autoconnect-custom-parameter-and-manage-your-ssid-and-password/
-// Check to see is param changed.
-strcpy(updated_mqtt_server, custom_mqtt_server.getValue());
+  //https://randomnerdtutorials.com/wifimanager-with-esp8266-autoconnect-custom-parameter-and-manage-your-ssid-and-password/
+  // Check to see is param changed.
+  strcpy(updated_mqtt_server, custom_mqtt_server.getValue());
 
-if (updated_mqtt_server != mqtt_server) {
+  if (updated_mqtt_server != mqtt_server) {
 
-saveSettings();
+    saveSettings();
 
-}
+  }
 
 
 
